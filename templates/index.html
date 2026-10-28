@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PERSONAL FINANCE</p>
+        <h1>Expense Tracker</h1>
+        <p class="muted">Know where your money goes, one expense at a time.</p>
+      </div>
+      <form class="month-picker" method="get" action="/">
+        <label for="month">View month</label>
+        <input id="month" name="month" type="month" value="{{ selected_month }}">
+        <button class="button secondary" type="submit">View</button>
+      </form>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="messages">
+          {% for category, message in messages %}
+            <p class="message {{ category }}">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="summary-grid">
+      <article class="summary-card primary">
+        <p>Total spent · {{ selected_month }}</p>
+        <h2>₹{{ "%.2f"|format(total) }}</h2>
+        <span>Across {{ expenses|length }} expense{% if expenses|length != 1 %}s{% endif %}</span>
+      </article>
+      <article class="summary-card">
+        <p>Monthly budget</p>
+        <h2>₹{{ "%.2f"|format(budget) }}</h2>
+        <div class="progress"><span style="width: {{ budget_percent }}%"></span></div>
+        <span>{{ budget_percent }}% of budget used{% if budget == 0 %} · Set a budget below{% endif %}</span>
+      </article>
+      <article class="summary-card">
+        <p>{% if remaining >= 0 %}Budget remaining{% else %}Over budget{% endif %}</p>
+        <h2 class="{% if remaining < 0 %}danger-text{% endif %}">₹{{ "%.2f"|format(remaining if remaining >= 0 else -remaining) }}</h2>
+        <span>{% if remaining < 0 %}You are over your budget{% else %}Keep your spending on track{% endif %}</span>
+      </article>
+    </section>
+
+    <section class="main-grid">
+      <article class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">NEW RECORD</p><h3>Add an expense</h3></div></div>
+        <form method="post" action="{{ url_for('add_expense') }}" class="expense-form">
+          <input type="hidden" name="return_month" value="{{ selected_month }}">
+          <label for="title">Expense name</label>
+          <input id="title" name="title" type="text" maxlength="100" placeholder="e.g. Lunch with friends" required>
+          <div class="form-row">
+            <div>
+              <label for="amount">Amount (₹)</label>
+              <input id="amount" name="amount" type="number" min="0.01" step="0.01" placeholder="250.00" required>
+            </div>
+            <div>
+              <label for="category">Category</label>
+              <select id="category" name="category">
+                {% for category in categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <label for="date">Date</label>
+          <input id="date" name="date" type="date" value="{{ today }}" required>
+          <button class="button" type="submit">+ Add expense</button>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">SPENDING LIMIT</p><h3>Monthly budget</h3></div></div>
+        <p class="muted small">Set the monthly spending limit you want to stay within.</p>
+        <form method="post" action="{{ url_for('update_budget') }}" class="expense-form">
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          <label for="monthly_budget">Budget amount (₹)</label>
+          <input id="monthly_budget" name="monthly_budget" type="number" min="0" step="0.01" value="{{ '%.2f'|format(budget) }}" required>
+          <button class="button secondary" type="submit">Save budget</button>
+        </form>
+        <div class="budget-note">Your expense records and budget are stored locally in JSON files.</div>
+      </article>
+    </section>
+
+    <section class="charts-grid">
+      <article class="panel chart-panel">
+        <div class="panel-heading"><div><p class="eyebrow">BREAKDOWN</p><h3>By category</h3></div></div>
+        {% if category_labels %}
+          <div class="chart-wrap"><canvas id="categoryChart"></canvas></div>
+        {% else %}<p class="empty-state">Add expenses to see your category chart.</p>{% endif %}
+      </article>
+      <article class="panel chart-panel">
+        <div class="panel-heading"><div><p class="eyebrow">DAILY TREND</p><h3>Spending by day</h3></div></div>
+        {% if daily_labels %}
+          <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+        {% else %}<p class="empty-state">Your daily spending trend will appear here.</p>{% endif %}
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading list-heading">
+        <div><p class="eyebrow">YOUR RECORDS</p><h3>Expenses for {{ selected_month }}</h3></div>
+        <span class="count-pill">{{ expenses|length }} total</span>
+      </div>
+      {% if expenses %}
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Expense</th><th>Category</th><th>Date</th><th>Amount</th><th></th></tr></thead>
+            <tbody>
+              {% for expense in expenses %}
+                <tr>
+                  <td class="expense-title">{{ expense.title }}</td>
+                  <td><span class="category-pill">{{ expense.category }}</span></td>
+                  <td>{{ expense.date }}</td>
+                  <td class="amount">₹{{ "%.2f"|format(expense.amount) }}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('delete_expense', expense_id=expense.id) }}" onsubmit="return confirm('Delete this expense?');">
+                      <input type="hidden" name="month" value="{{ selected_month }}">
+                      <button class="delete-button" type="submit" aria-label="Delete {{ expense.title }}">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">No expenses for this month yet. Add your first expense above.</div>
+      {% endif %}
+    </section>
+
+    <footer>Expense Tracker · Built with Python, Flask, JSON, HTML and CSS</footer>
+  </main>
+
+  <script>
+    const categoryLabels = {{ category_labels | tojson }};
+    const categoryValues = {{ category_values | tojson }};
+    const dailyLabels = {{ daily_labels | tojson }};
+    const dailyValues = {{ daily_values | tojson }};
+    const money = value => '₹' + Number(value).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const categoryCanvas = document.getElementById('categoryChart');
+    if (categoryCanvas) {
+      new Chart(categoryCanvas, {
+        type: 'doughnut',
+        data: { labels: categoryLabels, datasets: [{ data: categoryValues, borderWidth: 2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: context => context.label + ': ' + money(context.raw) } } } }
+      });
+    }
+
+    const dailyCanvas = document.getElementById('dailyChart');
+    if (dailyCanvas) {
+      new Chart(dailyCanvas, {
+        type: 'bar',
+        data: { labels: dailyLabels.map(day => 'Day ' + Number(day)), datasets: [{ label: 'Spent', data: dailyValues, borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: value => '₹' + value } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => money(context.raw) } } } }
+      });
+    }
+  </script>
+</body>
+</html>
